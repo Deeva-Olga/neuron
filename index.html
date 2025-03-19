@@ -1,62 +1,359 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>YOLOv8 Object1 Detection</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Обнаружение объектов новое для гни</title>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
     <style>
-      canvas {
-          display:block;
-          border: 1px solid black;
-          margin-top:10px;
-      }
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #e8f5e9; /* Светло-зеленый фон */
+            text-align: center;
+            padding: 40px; /* Увеличенные отступы */
+            background-image: url('https://www.transparenttextures.com/patterns/white-paper.png'); /* Фоновая текстура */
+            position: relative; /* Для позиционирования боковой панели */
+        }
+        h1 {
+            color: #388e3c; /* Темно-зеленый цвет заголовка */
+            margin-bottom: 30px; /* Отступ снизу */
+        }
+        #canvas {
+            border: 2px solid #4caf50; /* Зеленая рамка */
+            margin: 20px auto;
+            display: block;
+            /*max-width: 90%; Уменьшение максимальной ширины */
+            cursor: crosshair;
+            border-radius: 10px; /* Закругленные углы */
+        }
+        #uploadInput {
+            padding: 10px;
+            margin: 20px 0;
+            border: 2px solid #4caf50; /* Зеленая рамка */
+            border-radius: 5px;
+            transition: border-color 0.3s;
+        }
+        #uploadInput:focus {
+            border-color: #388e3c; /* Более темный зеленый при фокусе */
+            outline: none;
+        }
+        .button {
+            background-color: #4caf50; /* Зеленая кнопка */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin: 5px; /* Отступы между кнопками */
+        }
+        .button:hover {
+            background-color: #388e3c; /* Темно-зеленый при наведении */
+        }
+        #loader {
+            display: none;
+            font-size: 18px;
+            color: #4caf50; /* Зеленый цвет загрузчика */
+        }
+        #sidebar {
+            position: absolute;
+            left: 20px; /* Переместить на левую сторону */
+            top: 100px; /* Сместить вниз */
+            display: flex;
+            flex-direction: column; /* Вертикальное расположение кнопок */
+            align-items: flex-start; /* Выравнивание кнопок по левому краю */
+        }
+        #objectTypeSelect {
+            margin-top: 10px;
+            padding: 10px; /* Добавить отступы */
+            border: 2px solid #4caf50; /* Зеленая рамка */
+            border-radius: 5px; /* Закругленные углы */
+        }
     </style>
 </head>
 <body>
-    <h3>neuron</h3>
-    <input id="uploadInput" type="file"/>
-    <canvas></canvas>
-    <script>
-      /**
-       * "Upload" button onClick handler: uploads selected image file
-       * to backend, receives array of detected objects
-       * and draws them on top of image
-       */
-       const input = document.getElementById("uploadInput");
-       input.addEventListener("change",async(event) => {
-           const boxes = await detect_objects_on_image(event.target.files[0]);
-           draw_image_and_boxes(event.target.files[0],boxes);
-       })
+<h1>Обнаружение объектов на изображении новоое для гни</h1>
+<input type="file" id="uploadInput" accept="image/*" />
+<button id="uploadButton" class="button">Загрузить изображение</button>
+<div id="loader">Загрузка...</div>
 
-      /**
-       * Function draws the image from provided file
-       * and bounding boxes of detected objects on
-       * top of the image
-       * @param file Uploaded file object
-       * @param boxes Array of bounding boxes in format [[x1,y1,x2,y2,object_type,probability],...]
-       */
-      function draw_image_and_boxes(file,boxes) {
-          const img = new Image()
-          img.src = URL.createObjectURL(file);
-          img.onload = () => {
-              const canvas = document.querySelector("canvas");
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext("2d");
-              ctx.drawImage(img,0,0);
-              ctx.strokeStyle = "#00FF00";
-              ctx.lineWidth = 3;
-              ctx.font = "18px serif";
-              boxes.forEach(([x1,y1,x2,y2,label]) => {
-                  ctx.strokeRect(x1,y1,x2-x1,y2-y1);
-                  ctx.fillStyle = "#00ff00";
-                  const width = ctx.measureText(label).width;
-                  ctx.fillRect(x1,y1,width+10,25);
-                  ctx.fillStyle = "#000000";
-                  ctx.fillText(label, x1, y1+18);
-              });
-          }
-      }
+    <button class="button" onclick="showCount('neuron')">neuron</button>
+    <button class="button" onclick="showCount('artifacts')">artefacts</button>
+    <button class="button" onclick="showCount('glia')">glia</button>
+    <button id="calculateRatioButton" class="button">Вычислить отношение нейронов к глии</button>
+    <button id="toggleDrawButton" class="button">Включить рисование</button>
+    <select id="objectTypeSelect">
+        <option value="neuron">neuron</option>
+        <option value="artifacts">artefacts</option>
+        <option value="glia">glia</option>
+    </select>
+    <button id="deleteButton" class="button">Включить удаление</button>
+    <button id="downloadButton" class="button">Скачать отчет</button>
+</div>
+<canvas id="canvas"></canvas>
+</body>
+</html>
+    <script>
+    const input = document.getElementById("uploadInput");
+    const button = document.getElementById("uploadButton");
+    const downloadButton = document.getElementById("downloadButton");
+    const loader = document.getElementById("loader");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const objectTypeSelect = document.getElementById("objectTypeSelect"); // Select element for object type
+    const deleteButton = document.getElementById("deleteButton");
+    let detectedCounts = {};
+    let img; // Store the image element
+    let isDrawing = false;
+    let startX, startY, currentX, currentY; // Store current mouse position
+    let currentObjectType = "neuron"; // Default object type
+    let manualBoxes = []; // Store manual boxes
+    let initialBoxes = []; // Store initial (detected) boxes
+    let drawEnabled = true;
+    let isDeleting = false; // Переменная для состояния удаления рамки
+    let boxes = [];
+
+
+    button.addEventListener("click", async () => {
+        if (input.files.length > 0) {
+            const file = input.files[0];
+	    let fileName = input.files[0].name;
+            loader.style.display = "block"; 
+            const boxes = await detect_objects_on_image(file);
+            draw_image_and_boxes(file, boxes);
+            loader.style.display = "none"; 
+
+        } else {
+            alert("Пожалуйста, выберите файл изображения.");
+        }
+
+    });
+
+    toggleDrawButton.addEventListener('click', () => {
+        drawEnabled = !drawEnabled; // Переключаем режим рисования
+        toggleDrawButton.textContent = drawEnabled ? "Отключить рисование" : "Включить рисование"; // Меняем текст кнопки
+        console.log(`Режим рисования: ${drawEnabled ? 'включен' : 'выключен'}`);
+    });
+
+    // Event listeners for drawing
+    canvas.addEventListener('mousedown', (e) => {
+	if (!drawEnabled) return;
+        const mousePos = getMousePos(canvas, e);
+        isDrawing = true;
+
+    	startX = mousePos.x;
+    	startY = mousePos.y;
+        //startX = e.offsetX;
+        //startY = e.offsetY;
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+	if (!drawEnabled) return;
+        isDrawing = false;
+        const mousePos = getMousePos(canvas, e);
+        const x1 = startX;
+        const y1 = startY;
+    	const x2 = mousePos.x;
+    	const y2 = mousePos.y;
+        //const x2 = e.offsetX;
+        //const y2 = e.offsetY;
+	console.log(x1, x2, y1,y2,img.height,img.width);
+	
+        drawBox(x1, y1, x2, y2, currentObjectType); // Draw the final box
+        updateCountsForManualBox(currentObjectType, x1, y1, x2, y2);
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing || !drawEnabled) return;
+	const mousePos = getMousePos(canvas, e);
+        currentX = e.offsetX;
+        currentY = e.offsetY;
+        redrawCanvas();  // Redraw the canvas to show the dynamic rectangle
+        drawBox(startX, startY, mousePos.x, mousePos.y, currentObjectType); // Draw the current box
+    });
+
+    objectTypeSelect.addEventListener('change', (e) => {
+        currentObjectType = e.target.value;
+    });
+
+  document.getElementById("calculateRatioButton").addEventListener("click", () => {
+        const neuronCount = detectedCounts['neuron'] || 0;
+        const gliaCount = detectedCounts['glia'] || 0;
+        let ratio = 0;
+
+        if (gliaCount > 0) {
+            ratio = neuronCount / gliaCount;
+        } else if (neuronCount > 0) {
+            ratio = neuronCount; // If no glia, just show the count of neurons
+        }
+
+        alert(`Отношение нейронов к глии: ${ratio.toFixed(3)}`); // Display the ratio
+    });
+
+
+  document.getElementById("downloadButton").addEventListener("click", function() {
+        var csv = [];
+        let fileName = input.files[0].name;
+        const neuronCount = detectedCounts['neuron'] || 0;
+        const gliaCount = detectedCounts['glia'] || 0;
+	const artefactsCount = detectedCounts['artefacts'] || 0;
+
+        let ratio = gliaCount > 0 ? (neuronCount / gliaCount).toFixed(2) : neuronCount;
+
+        const reportData = [["Имя файла", "Объект", "Количество"]];
+        for (const [label, count] of Object.entries(detectedCounts)) {
+            reportData.push([fileName, label, count]);
+        }
+	reportData.push(["NGI", ratio]);
+        const csvContent = reportData.map(e => e.join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        // Создаем ссылку для скачивания
+        var downloadLink = document.createElement("a");
+        downloadLink.download = "report.csv"; // Имя файла
+        downloadLink.href = window.URL.createObjectURL(blob);
+        downloadLink.style.display = "none";
+        
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    });
+
+
+
+    deleteButton.addEventListener("click", () => {
+        isDeleting = !isDeleting; // Переключаем режим удаления
+        deleteButton.textContent = isDeleting ? "Отключить удаление" : "Включить удаление"; // Меняем текст кнопки
+    });
+
+    // Обработчик события для клика на канвасе
+    canvas.addEventListener('click', (e) => {
+        if (isDeleting) {
+            const x = e.offsetX;
+            const y = e.offsetY;
+            removeBoxAtPosition(x, y); // Удаляем рамку по позиции клика
+        }
+    });
+
+    // Функция для удаления рамки по позиции
+    function removeBoxAtPosition(x, y) {
+        for (let i = 0; i < manualBoxes.length; i++) {
+            const [x1, y1, x2, y2, label] = manualBoxes[i];
+            if (x >= x1 && x <= x2 && y >= y1 && y <= y2) { // Проверяем, попадает ли клик в рамку
+                detectedCounts[label] = (detectedCounts[label] || 0) - 1; // Уменьшаем счетчик
+                manualBoxes.splice(i, 1); // Удаляем рамку из массива
+                redrawCanvas(); // Перерисовываем канвас
+                alert(`Рамка для ${label} удалена!`); // Уведомление
+                break; // Выходим из цикла после удаления
+            }
+        }
+    }
+
+
+
+
+
+    function getMousePos(canvas, event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+    }
+  
+
+    function draw_image_and_boxes(file, boxes) {
+        img = new Image(); // Recreate the image element
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            countDetectedObjects(boxes);
+
+             // Store initial boxes
+             initialBoxes = boxes.map(([x1, y1, x2, y2, label]) => [x1, y1, x2, y2, label]);
+
+            // Draw initial boxes
+            initialBoxes.forEach(([x1, y1, x2, y2, label]) => {
+                drawBox(x1, y1, x2, y2, label);
+            });
+        }
+        // clear manualBoxes array on image load
+        manualBoxes = [];
+    }
+
+    function drawBox(x1, y1, x2, y2, type) {
+        ctx.strokeStyle = getColorByLabel(type); // Set the color based on the object type
+        ctx.lineWidth = 3; // Set the line thickness
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1); // Draw the rectangle
+        ctx.fillStyle = "#000000";
+        ctx.fillText(type, x1, y1 > 10 ? y1 - 5 : 10); // Add label
+    }
+
+    function redrawCanvas() {
+        // Clear the canvas first
+        //ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Then draw the image again
+        if(img){
+            ctx.drawImage(img, 0, 0);
+        }
+
+        // Redraw initial boxes
+        initialBoxes.forEach(([x1, y1, x2, y2, label]) => {
+            drawBox(x1, y1, x2, y2, label);
+        });
+
+
+        // Draw all the previously drawn boxes
+        manualBoxes.forEach(box => {
+            const [x1, y1, x2, y2, type] = box;
+            drawBox(x1, y1, x2, y2, type);
+        });
+    }
+
+    function updateCountsForManualBox(label, x1, y1, x2, y2) {
+        // Save box coordinates
+        manualBoxes.push([x1, y1, x2, y2, label]);
+        detectedCounts[label] = (detectedCounts[label] || 0) +1;
+    }
+
+    function showCount(label) {
+        let count = detectedCounts[label] || 0;
+        manualBoxes.forEach(box => {
+          //if (box[4] === label) {
+          //  count++;
+          //}
+        });
+
+        alert(`Количество ${label}: ${count}`);// herewego
+    }
+
+    function countDetectedObjects(boxes) {
+        // Reset counters before counting
+        detectedCounts = {};
+
+        boxes.forEach(([x1, y1, x2, y2, label]) => {
+            // Increase the counter for each detected object
+            detectedCounts[label] = (detectedCounts[label] || 0) + 1;
+        });
+    }
+
+    function getColorByLabel(label) {
+        switch (label) {
+            case 'neuron':
+                return 'green';
+            case 'artifacts':
+                return 'red';
+            case 'glia':
+                return 'blue';
+            // Add more cases for other object types
+            default:
+                return 'black'}
+};
+
 
       /**
        * Function receives an image, passes it through YOLOv8 neural network
@@ -115,6 +412,18 @@
           return outputs["output0"].data;
       }
 
+
+
+
+
+      const strFrequency = function (stringArr) {
+            return stringArr.reduce((count, word) => {
+                  count[word] = (count[word] || 0) + 1;
+                  return count;
+            }, {})
+          }
+
+
       /**
        * Function used to convert RAW output from YOLOv8 to an array of detected objects.
        * Each object contain the bounding box of this object, the type of object and the probability
@@ -129,9 +438,10 @@
               const [class_id,prob] = [...Array(2).keys()]
                   .map(col => [col, output[33600*(col+4)+index]])
                   .reduce((accum, item) => item[1]>accum[1] ? item : accum,[0,0]);
-              if (prob < 0.005) {
+              if (prob < 0.001) { // probability
                   continue;
               }
+
               const label = yolo_classes[class_id];
               const xc = output[index];
               const yc = output[33600+index];
@@ -148,10 +458,14 @@
           const result = [];
           while (boxes.length>0) {
               result.push(boxes[0]);
-              boxes = boxes.filter(box => iou(boxes[0],box)<0.7);
+              boxes = boxes.filter(box => iou(boxes[0],box)<0.5);
           }
           return result;
       }
+
+      
+
+
 
       /**
        * Function calculates "Intersection-over-union" coefficient for specified two boxes
@@ -203,6 +517,9 @@
       const yolo_classes = [
           'neuron', 'glia'
       ];
+
+
     </script>
+
 </body>
 </html>
