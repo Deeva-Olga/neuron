@@ -73,10 +73,12 @@
     </style>
 </head>
 <body>
-<h1>Обнаружение объектов на изображении новое для гни</h1>
+<h1>Обнаружение объектов на изображении новоое для гни</h1>
 <input type="file" id="uploadInput" accept="image/*" />
 <button id="uploadButton" class="button">Загрузить изображение</button>
 <div id="loader">Загрузка...</div>
+<label for="probSlider">Вероятность (my_prob): <span id="probValue">0.5</span></label>
+<input type="range" id="probSlider" min="0" max="1" step="0.01" value="0.5" />
 
     <button class="button" onclick="showCount('neuron')">neuron</button>
     <button class="button" onclick="showCount('artifacts')">artefacts</button>
@@ -113,6 +115,7 @@
     let drawEnabled = true;
     let isDeleting = false; // Переменная для состояния удаления рамки
     let boxes = [];
+    let my_prob=0.005;
 
 
     button.addEventListener("click", async () => {
@@ -129,6 +132,42 @@
         }
 
     });
+
+
+
+    const probSlider = document.getElementById("probSlider");
+    const probValueDisplay = document.getElementById("probValue");
+
+    probSlider.addEventListener("input", () => {
+        const probValue = parseFloat(probSlider.value);
+        probValueDisplay.textContent = probValue.toFixed(2); // Обновляем отображаемое значение
+        redrawCanvasWithProb(probValue); // Перерисовываем холст с учетом вероятности
+    });
+
+// Функция для перерисовки рамок на холсте в соответствии с вероятностью
+    function redrawCanvasWithProb(my_prob) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Очищаем холст
+
+    // Рисуем изображение снова
+        if (img) {
+            ctx.drawImage(img, 0, 0);
+        }
+
+    // Рисуем рамки, которые соответствуют установленной вероятности
+        initialBoxes.forEach(([x1, y1, x2, y2, label, probability]) => {
+            if (probability >= my_prob) { // Проверяем вероятность
+                drawBox(x1, y1, x2, y2, label);
+            }
+        });
+
+    // Рисуем все ранее нарисованные рамки
+        manualBoxes.forEach(box => {
+            const [x1, y1, x2, y2, type] = box;
+            drawBox(x1, y1, x2, y2, type);
+        });
+    }
+
+
 
     toggleDrawButton.addEventListener('click', () => {
         drawEnabled = !drawEnabled; // Переключаем режим рисования
@@ -251,9 +290,6 @@
     }
 
 
-
-
-
     function getMousePos(canvas, event) {
         const rect = canvas.getBoundingClientRect();
         return {
@@ -328,7 +364,7 @@
           //}
         });
 
-        alert(`Количество ${label}: ${count}`);// herewego
+        alert(`Количество ${label}: ${count}`);
     }
 
     function countDetectedObjects(boxes) {
@@ -349,7 +385,6 @@
                 return 'red';
             case 'glia':
                 return 'blue';
-            // Add more cases for other object types
             default:
                 return 'black'}
 };
@@ -438,7 +473,7 @@
               const [class_id,prob] = [...Array(2).keys()]
                   .map(col => [col, output[33600*(col+4)+index]])
                   .reduce((accum, item) => item[1]>accum[1] ? item : accum,[0,0]);
-              if (prob < 0.001) { // probability
+              if (prob < my_prob) { // probability
                   continue;
               }
 
